@@ -1,0 +1,4347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>DevGuard - GitHub Repository Health Analyzer</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+
+            <style>
+                .history-refresh-button {
+                    border: none;
+                    border-radius: 10px;
+                    padding: 10px 16px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    background: #2563eb;
+                    color: #ffffff;
+                }
+
+                .history-refresh-button:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+
+                .history-list {
+                    display: grid;
+                    gap: 16px;
+                    margin-top: 18px;
+                }
+
+                .history-card {
+                    border: 1px solid rgba(148, 163, 184, 0.25);
+                    border-radius: 14px;
+                    padding: 18px;
+                    background: rgba(255, 255, 255, 0.03);
+                }
+
+                .history-card-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 16px;
+                    margin-bottom: 14px;
+                }
+
+                .history-repository-name {
+                    margin: 0;
+                    font-size: 1.05rem;
+                }
+
+                .history-repository-url {
+                    margin: 5px 0 0;
+                    font-size: 0.85rem;
+                    word-break: break-all;
+                    opacity: 0.7;
+                }
+
+                .history-status {
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 5px 10px;
+                    border-radius: 999px;
+                    font-size: 0.8rem;
+                    font-weight: 700;
+                    white-space: nowrap;
+                }
+
+                .history-status.good {
+                    background: rgba(34, 197, 94, 0.15);
+                    color: #22c55e;
+                }
+
+                .history-status.needs-improvement {
+                    background: rgba(234, 179, 8, 0.15);
+                    color: #eab308;
+                }
+
+                .history-status.needs-attention {
+                    background: rgba(239, 68, 68, 0.15);
+                    color: #ef4444;
+                }
+
+                .history-status.default {
+                    background: rgba(148, 163, 184, 0.15);
+                    color: inherit;
+                }
+
+                .history-score-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 10px;
+                }
+
+                .history-score-item {
+                    padding: 12px;
+                    border-radius: 10px;
+                    background: rgba(148, 163, 184, 0.08);
+                }
+
+                .history-score-label {
+                    display: block;
+                    font-size: 0.78rem;
+                    opacity: 0.7;
+                    margin-bottom: 4px;
+                }
+
+                .history-score-value {
+                    font-size: 1.1rem;
+                    font-weight: 700;
+                }
+
+                .history-card-footer {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 12px;
+                    margin-top: 14px;
+                    padding-top: 12px;
+                    border-top: 1px solid rgba(148, 163, 184, 0.15);
+                }
+
+                .history-date {
+                    font-size: 0.82rem;
+                    opacity: 0.7;
+                }
+
+                .history-delete-button {
+                    border: none;
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    background: rgba(239, 68, 68, 0.12);
+                    color: #ef4444;
+                }
+
+                .history-delete-button:hover {
+                    background: rgba(239, 68, 68, 0.2);
+                }
+
+                @media (max-width: 768px) {
+                    .history-card-header,
+                    .history-card-footer {
+                        flex-direction: column;
+                        align-items: stretch;
+                    }
+
+                    .history-score-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+
+                    .history-refresh-button,
+                    .history-delete-button {
+                        width: 100%;
+                    }
+                }
+            
+                /* =========================================================
+                   PHASE 7 - STEP 2 - SCORE VISUALIZATION
+                ========================================================== */
+
+                .overall-score-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    min-height: 260px;
+                }
+
+                .overall-score-label {
+                    margin-bottom: 14px;
+                    font-size: 0.9rem;
+                    font-weight: 700;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    opacity: 0.75;
+                }
+
+                .score-ring {
+                    --score: 0;
+                    width: 178px;
+                    height: 178px;
+                    border-radius: 50%;
+                    display: grid;
+                    place-items: center;
+                    background: conic-gradient(currentColor calc(var(--score) * 1%), rgba(148, 163, 184, 0.16) 0);
+                    position: relative;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+                    transition: background 0.7s ease, transform 0.25s ease;
+                }
+
+                .score-ring:hover {
+                    transform: translateY(-3px) scale(1.02);
+                }
+
+                .score-ring::before {
+                    content: "";
+                    position: absolute;
+                    inset: 8px;
+                    border-radius: 50%;
+                    background: var(--card-bg, rgba(15, 23, 42, 0.96));
+                }
+
+                .score-ring-inner {
+                    position: relative;
+                    z-index: 1;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .overall-score {
+                    font-size: 2.55rem;
+                    font-weight: 800;
+                    letter-spacing: -0.04em;
+                }
+
+                .score-ring-max {
+                    font-size: 0.75rem;
+                    opacity: 0.55;
+                    margin-top: -2px;
+                }
+
+                .overall-score-ring.score-good {
+                    color: #22c55e;
+                }
+
+                .overall-score-ring.score-improvement {
+                    color: #eab308;
+                }
+
+                .overall-score-ring.score-attention {
+                    color: #ef4444;
+                }
+
+                .component-score-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    min-height: 260px;
+                }
+
+                .component-icon {
+                    font-size: 1.45rem;
+                    margin-bottom: 8px;
+                }
+
+                .component-title {
+                    font-weight: 700;
+                    margin-bottom: 13px;
+                }
+
+                .mini-score-ring {
+                    --score: 0;
+                    width: 118px;
+                    height: 118px;
+                    border-radius: 50%;
+                    display: grid;
+                    place-items: center;
+                    background: conic-gradient(currentColor calc(var(--score) * 1%), rgba(148, 163, 184, 0.16) 0);
+                    position: relative;
+                    transition: background 0.7s ease, transform 0.25s ease;
+                }
+
+                .mini-score-ring:hover {
+                    transform: translateY(-2px);
+                }
+
+                .mini-score-ring::before {
+                    content: "";
+                    position: absolute;
+                    inset: 7px;
+                    border-radius: 50%;
+                    background: var(--card-bg, rgba(15, 23, 42, 0.96));
+                }
+
+                .mini-score-ring-inner {
+                    position: relative;
+                    z-index: 1;
+                }
+
+                .mini-score-ring .component-score {
+                    font-size: 1.65rem;
+                    font-weight: 800;
+                    line-height: 1;
+                }
+
+                .mini-score-ring.score-good {
+                    color: #22c55e;
+                }
+
+                .mini-score-ring.score-improvement {
+                    color: #eab308;
+                }
+
+                .mini-score-ring.score-attention {
+                    color: #ef4444;
+                }
+
+                @media (max-width: 768px) {
+                    .overall-score-card,
+                    .component-score-card {
+                        min-height: 220px;
+                    }
+
+                    .score-ring {
+                        width: 150px;
+                        height: 150px;
+                    }
+
+                    .overall-score {
+                        font-size: 2.15rem;
+                    }
+
+                    .mini-score-ring {
+                        width: 105px;
+                        height: 105px;
+                    }
+                }
+
+                /* =========================================================
+                   PHASE 7 - DASHBOARD UI POLISH
+                ========================================================== */
+
+                .overall-report-grid {
+                    align-items: stretch;
+                }
+
+                .overall-score-card,
+                .component-score-card,
+                .quality-score-card,
+                .health-score-card,
+                .security-status-card {
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .overall-score-card::after,
+                .component-score-card::after {
+                    content: "";
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    height: 3px;
+                    background: currentColor;
+                    opacity: 0.25;
+                }
+
+                .overall-score {
+                    line-height: 1.1;
+                }
+
+                .component-score {
+                    margin-top: 6px;
+                    line-height: 1.1;
+                }
+
+                .score-label {
+                    display: block;
+                    margin-top: 4px;
+                    font-weight: 600;
+                }
+
+                .quality-score {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+
+                .large-score {
+                    line-height: 1.1;
+                }
+
+                .score-label {
+                    white-space: nowrap;
+                }
+
+                .recommendation-summary {
+                    display: flex;
+                    align-items: center;
+                    gap: 7px;
+                    flex-wrap: wrap;
+                }
+
+                .recommendations-list {
+                    display: grid;
+                    gap: 12px;
+                }
+
+                .recommendation-card {
+                    border: 1px solid rgba(148, 163, 184, 0.22);
+                    border-radius: 12px;
+                    padding: 15px 16px;
+                    background: rgba(148, 163, 184, 0.05);
+                }
+
+                .recommendation-header,
+                .recommendation-title {
+                    display: flex;
+                    align-items: center;
+                    gap: 9px;
+                }
+
+                .recommendation-header {
+                    justify-content: space-between;
+                }
+
+                .recommendation-title {
+                    min-width: 0;
+                }
+
+                .recommendation-message {
+                    margin-top: 8px;
+                    line-height: 1.55;
+                }
+
+                .priority-badge,
+                .severity-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-width: 64px;
+                    padding: 4px 9px;
+                    border-radius: 999px;
+                    font-size: 0.76rem;
+                    font-weight: 700;
+                    text-transform: capitalize;
+                    white-space: nowrap;
+                }
+
+                .priority-high .priority-badge,
+                .severity-badge.high {
+                    background: rgba(239, 68, 68, 0.14);
+                    color: #ef4444;
+                }
+
+                .priority-medium .priority-badge,
+                .severity-badge.medium {
+                    background: rgba(234, 179, 8, 0.14);
+                    color: #eab308;
+                }
+
+                .priority-low .priority-badge,
+                .severity-badge.low {
+                    background: rgba(59, 130, 246, 0.14);
+                    color: #3b82f6;
+                }
+
+                .tag-list {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }
+
+                .tag {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 5px;
+                    padding: 6px 10px;
+                    border-radius: 999px;
+                    background: rgba(59, 130, 246, 0.10);
+                    border: 1px solid rgba(59, 130, 246, 0.16);
+                    line-height: 1.2;
+                }
+
+                .metric-card {
+                    min-width: 0;
+                }
+
+                .metric-value {
+                    display: block;
+                    margin-top: 5px;
+                }
+
+                .detail-list {
+                    display: grid;
+                    gap: 10px;
+                }
+
+                .detail-card {
+                    overflow: hidden;
+                }
+
+                .detail-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 12px;
+                }
+
+                .detail-header strong {
+                    min-width: 0;
+                    overflow-wrap: anywhere;
+                }
+
+                .detail-file {
+                    overflow-wrap: anywhere;
+                }
+
+                .security-finding-card {
+                    border-left: 4px solid rgba(234, 179, 8, 0.75);
+                }
+
+                .security-finding-card .severity-badge {
+                    flex-shrink: 0;
+                }
+
+                .health-indicators {
+                    display: grid;
+                    grid-template-columns: repeat(5, minmax(0, 1fr));
+                    gap: 10px;
+                    margin: 18px 0;
+                }
+
+                .health-indicator {
+                    display: flex;
+                    align-items: center;
+                    gap: 7px;
+                    min-width: 0;
+                    padding: 11px 12px;
+                    border-radius: 10px;
+                    border: 1px solid rgba(148, 163, 184, 0.20);
+                }
+
+                .health-indicator strong {
+                    overflow-wrap: anywhere;
+                }
+
+                .health-indicator.present {
+                    background: rgba(34, 197, 94, 0.08);
+                    border-color: rgba(34, 197, 94, 0.20);
+                }
+
+                .health-indicator.missing {
+                    background: rgba(239, 68, 68, 0.07);
+                    border-color: rgba(239, 68, 68, 0.18);
+                }
+
+                .empty-state {
+                    line-height: 1.5;
+                }
+
+                .history-section-heading {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 16px;
+                }
+
+                .history-count-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-width: 30px;
+                    height: 24px;
+                    padding: 0 8px;
+                    border-radius: 999px;
+                    background: rgba(59, 130, 246, 0.12);
+                    font-size: 0.78rem;
+                    font-weight: 700;
+                }
+
+                .history-score-item {
+                    min-width: 0;
+                }
+
+                .history-score-value {
+                    display: block;
+                    margin-top: 3px;
+                }
+
+                .history-delete-button {
+                    transition: opacity 0.15s ease, transform 0.15s ease;
+                }
+
+                .history-delete-button:hover {
+                    transform: translateY(-1px);
+                }
+
+                @media (max-width: 1000px) {
+                    .health-indicators {
+                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                    }
+                }
+
+                @media (max-width: 768px) {
+                    .recommendation-header,
+                    .detail-header {
+                        flex-direction: column;
+                        align-items: stretch;
+                    }
+
+                    .priority-badge,
+                    .severity-badge {
+                        align-self: flex-start;
+                    }
+
+                    .health-indicators {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+
+                    .history-score-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+                }
+
+                @media (max-width: 480px) {
+                    .health-indicators,
+                    .history-score-grid {
+                        grid-template-columns: 1fr;
+                    }
+
+                    .quality-score {
+                        align-items: flex-start;
+                        flex-direction: column;
+                        gap: 2px;
+                    }
+                }
+
+            
+/* =========================================================
+   PHASE 7 STEP 3 - ANALYTICS
+========================================================= */
+.analytics-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin-top:22px; }
+.analytics-card { background:var(--card-bg,#fff); border:1px solid var(--border-color,#e5e7eb); border-radius:18px; padding:22px; box-shadow:0 8px 24px rgba(15,23,42,.06); }
+.analytics-card h3 { margin:0 0 6px; }
+.analytics-subtitle { margin:0 0 18px; color:#64748b; font-size:.9rem; }
+.analytics-row { display:grid; grid-template-columns:110px 1fr 48px; align-items:center; gap:10px; margin:13px 0; }
+.analytics-label { font-size:.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.analytics-track { height:10px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+.analytics-bar { height:100%; width:0; border-radius:999px; transition:width .7s ease; background:linear-gradient(90deg,#6366f1,#8b5cf6); }
+.analytics-value { text-align:right; font-weight:700; font-size:.9rem; }
+.analytics-empty { color:#64748b; padding:16px 0; }
+.analytics-stat-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.analytics-stat { padding:16px; border-radius:14px; background:#f8fafc; border:1px solid #e2e8f0; }
+.analytics-stat span { display:block; color:#64748b; font-size:.82rem; margin-bottom:5px; }
+.analytics-stat strong { font-size:1.35rem; }
+.analytics-meter { margin-top:18px; }
+.analytics-meter-head { display:flex; justify-content:space-between; font-size:.9rem; margin-bottom:8px; }
+@media (max-width:800px) { .analytics-grid { grid-template-columns:1fr; } .analytics-row { grid-template-columns:90px 1fr 42px; } }
+
+
+                /* =========================================================
+                   PHASE 7 STEP 4 - INTERACTIVE DASHBOARD
+                ========================================================== */
+                .report-actions {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                    margin: 0 0 18px;
+                }
+
+                .report-action-button {
+                    border: 1px solid rgba(59, 130, 246, 0.22);
+                    border-radius: 10px;
+                    padding: 10px 14px;
+                    cursor: pointer;
+                    font-weight: 700;
+                    background: rgba(59, 130, 246, 0.08);
+                    color: inherit;
+                    transition: transform .15s ease, background .15s ease;
+                }
+
+                .report-action-button:hover {
+                    transform: translateY(-1px);
+                    background: rgba(59, 130, 246, 0.15);
+                }
+
+                .interactive-detail {
+                    cursor: pointer;
+                    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+                }
+
+                .interactive-detail:hover {
+                    transform: translateY(-1px);
+                    border-color: rgba(59, 130, 246, 0.35);
+                }
+
+                .interactive-detail:focus-visible {
+                    outline: 2px solid #3b82f6;
+                    outline-offset: 2px;
+                }
+
+                .detail-hint {
+                    margin-top: 9px;
+                    font-size: .78rem;
+                    opacity: .62;
+                }
+
+                .security-finding-card {
+                    cursor: pointer;
+                }
+
+                .security-finding-card .finding-details {
+                    display: none;
+                }
+
+                .security-finding-card.expanded .finding-details {
+                    display: block;
+                }
+
+                .security-finding-card.expanded {
+                    box-shadow: 0 8px 22px rgba(15, 23, 42, .08);
+                }
+
+                .recommendation-card.interactive-recommendation {
+                    cursor: pointer;
+                }
+
+                .recommendation-card.highlighted,
+                .detail-card.highlighted {
+                    animation: devguardHighlight 1.4s ease;
+                }
+
+                @keyframes devguardHighlight {
+                    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, .42); }
+                    35% { box-shadow: 0 0 0 6px rgba(59, 130, 246, .16); }
+                    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+                }
+
+                @media (max-width: 600px) {
+                    .report-actions {
+                        justify-content: stretch;
+                    }
+                    .report-action-button {
+                        flex: 1 1 100%;
+                    }
+                }
+
+</style>
+
+</head>
+
+<body>
+
+    <!-- =========================================================
+         NAVBAR
+    ========================================================== -->
+
+    <nav class="navbar">
+        <div class="navbar-container">
+
+            <div class="brand">
+                🛡️ DevGuard
+            </div>
+
+            <div class="nav-subtitle">
+                GitHub Repository Health Analyzer
+            </div>
+
+        </div>
+    </nav>
+
+
+    <!-- =========================================================
+         MAIN CONTAINER
+    ========================================================== -->
+
+    <main class="container">
+
+        <!-- =====================================================
+             HERO SECTION
+        ====================================================== -->
+
+        <section class="hero">
+
+            <div class="hero-content">
+
+                <h1>
+                    Analyze Your GitHub Repository
+                </h1>
+
+                <p>
+                    Analyze repository structure, code quality,
+                    security, dependencies, tests, and project health
+                    with DevGuard.
+                </p>
+
+                <form
+                    id="repository-form"
+                    class="repository-form"
+                >
+
+                    <div class="input-group">
+
+                        <input
+                            type="url"
+                            id="repository-url"
+                            name="repository_url"
+                            placeholder="https://github.com/username/repository"
+                            required
+                        >
+
+                        <button
+                            type="submit"
+                            id="analyze-button"
+                        >
+                            🔍 Analyze Repository
+                        </button>
+
+                    </div>
+
+                </form>
+
+                <div
+                    id="loading"
+                    class="loading hidden"
+                >
+                    <div class="spinner"></div>
+                    <span>
+                        Analyzing repository...
+                    </span>
+                </div>
+
+                <div
+                    id="error-message"
+                    class="error-message hidden"
+                ></div>
+
+            </div>
+
+        </section>
+
+
+        <!-- =====================================================
+             RESULTS
+        ====================================================== -->
+
+        <section
+            id="results"
+            class="results hidden"
+        >
+
+
+            <!-- =================================================
+                 OVERALL DEVGUARD REPORT
+            ================================================== -->
+
+            <section
+                id="overall-report"
+                class="dashboard-section overall-report-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+                        <span class="section-icon">
+                            🛡️
+                        </span>
+
+                        <h2>
+                            Overall DevGuard Report
+                        </h2>
+
+                        <p>
+                            Combined repository health assessment
+                        </p>
+                    </div>
+
+                </div>
+
+
+                <div class="report-actions" aria-label="Report actions">
+                    <button type="button" id="copy-report-button" class="report-action-button">📋 Copy Report</button>
+                    <button type="button" id="download-report-button" class="report-action-button">📥 Download Report</button>
+                </div>
+
+
+                <div class="overall-report-grid">
+
+                    <!-- Overall Score -->
+
+                    <div class="overall-score-card">
+
+                        <div class="overall-score-label">
+                            DevGuard Score
+                        </div>
+
+                        <div class="score-ring overall-score-ring" id="overall-score-ring">
+                            <div class="score-ring-inner">
+                                <div
+                                    id="overall-score"
+                                    class="overall-score"
+                                >
+                                    --
+                                </div>
+                                <div class="score-ring-max">/ 100</div>
+                            </div>
+                        </div>
+
+                        <div
+                            id="overall-status"
+                            class="overall-status"
+                        >
+                            --
+                        </div>
+
+                    </div>
+
+
+                    <!-- Code Quality -->
+
+                    <div class="component-score-card">
+
+                        <div class="component-icon">
+                            📊
+                        </div>
+
+                        <div class="component-title">
+                            Code Quality
+                        </div>
+
+                        <div class="mini-score-ring" id="overall-quality-score-ring">
+                            <div class="mini-score-ring-inner">
+                                <div
+                                    id="overall-quality-score"
+                                    class="component-score"
+                                >
+                                    --
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+
+                    <!-- Security -->
+
+                    <div class="component-score-card">
+
+                        <div class="component-icon">
+                            🔐
+                        </div>
+
+                        <div class="component-title">
+                            Security
+                        </div>
+
+                        <div class="mini-score-ring" id="overall-security-score-ring">
+                            <div class="mini-score-ring-inner">
+                                <div
+                                    id="overall-security-score"
+                                    class="component-score"
+                                >
+                                    --
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+
+                    <!-- Project Health -->
+
+                    <div class="component-score-card">
+
+                        <div class="component-icon">
+                            ❤️
+                        </div>
+
+                        <div class="component-title">
+                            Project Health
+                        </div>
+
+                        <div class="mini-score-ring" id="overall-health-score-ring">
+                            <div class="mini-score-ring-inner">
+                                <div
+                                    id="overall-health-score"
+                                    class="component-score"
+                                >
+                                    --
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Recommendation Summary -->
+
+                <div class="recommendation-summary">
+
+                    <span class="recommendation-icon">
+                        💡
+                    </span>
+
+                    <span>
+                        Recommendations:
+                    </span>
+
+                    <strong id="recommendation-count">
+                        0
+                    </strong>
+
+                </div>
+
+
+                <!-- Recommendations -->
+
+                <div class="recommendations-container">
+
+                    <h3>
+                        Recommendations
+                    </h3>
+
+                    <div
+                        id="recommendations-list"
+                        class="recommendations-list"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 REPOSITORY INFORMATION
+            ================================================== -->
+
+            <section
+                id="repository-information"
+                class="dashboard-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+                        <span class="section-icon">
+                            📦
+                        </span>
+
+                        <h2>
+                            Repository Information
+                        </h2>
+                    </div>
+
+                </div>
+
+                <div class="repository-card">
+
+                    <div class="repository-header">
+
+                        <div>
+
+                            <h3 id="repository-name">
+                                --
+                            </h3>
+
+                            <p id="repository-description">
+                                --
+                            </p>
+
+                        </div>
+
+                        <a
+                            id="github-link"
+                            href="#"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            View on GitHub ↗
+                        </a>
+
+                    </div>
+
+
+                    <div class="repository-stats">
+
+                        <div class="stat-item">
+
+                            <span class="stat-icon">
+                                ⭐
+                            </span>
+
+                            <span>
+                                Stars
+                            </span>
+
+                            <strong id="repository-stars">
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="stat-item">
+
+                            <span class="stat-icon">
+                                🍴
+                            </span>
+
+                            <span>
+                                Forks
+                            </span>
+
+                            <strong id="repository-forks">
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="stat-item">
+
+                            <span class="stat-icon">
+                                🐛
+                            </span>
+
+                            <span>
+                                Open Issues
+                            </span>
+
+                            <strong id="repository-issues">
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="stat-item">
+
+                            <span class="stat-icon">
+                                💻
+                            </span>
+
+                            <span>
+                                Language
+                            </span>
+
+                            <strong id="repository-language">
+                                --
+                            </strong>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 REPOSITORY STRUCTURE
+            ================================================== -->
+
+            <section
+                id="repository-structure"
+                class="dashboard-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <span class="section-icon">
+                            📁
+                        </span>
+
+                        <h2>
+                            Repository Structure
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div class="metrics-grid">
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            📄
+                        </span>
+
+                        <span class="metric-label">
+                            Files
+                        </span>
+
+                        <strong
+                            id="total-files"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            📂
+                        </span>
+
+                        <span class="metric-label">
+                            Directories
+                        </span>
+
+                        <strong
+                            id="total-directories"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            🧪
+                        </span>
+
+                        <span class="metric-label">
+                            Test Files
+                        </span>
+
+                        <strong
+                            id="test-file-count"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            📋
+                        </span>
+
+                        <span class="metric-label">
+                            Important Files
+                        </span>
+
+                        <strong
+                            id="important-file-count"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Languages -->
+
+                <div class="subsection">
+
+                    <h3>
+                        Languages
+                    </h3>
+
+                    <div
+                        id="languages-list"
+                        class="tag-list"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+
+
+            <!-- =================================================
+                 REPOSITORY ANALYTICS
+            ================================================== -->
+            <section id="repository-analytics" class="dashboard-section">
+                <div class="section-heading">
+                    <div>
+                        <span class="section-icon">📈</span>
+                        <h2>Repository Analytics</h2>
+                        <p>Visual summary of repository composition and quality metrics</p>
+                    </div>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h3>💻 Language Distribution</h3>
+                        <p class="analytics-subtitle">Files detected by programming language</p>
+                        <div id="language-analytics"></div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h3>📁 Repository Composition</h3>
+                        <p class="analytics-subtitle">How the repository is structured</p>
+                        <div id="composition-analytics"></div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h3>📊 Code Quality Metrics</h3>
+                        <p class="analytics-subtitle">Key maintainability indicators</p>
+                        <div id="quality-analytics"></div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h3>🔐 Security Findings</h3>
+                        <p class="analytics-subtitle">Severity distribution from static analysis</p>
+                        <div id="security-analytics"></div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- =================================================
+                 CODE QUALITY
+            ================================================== -->
+
+            <section
+                id="code-quality"
+                class="dashboard-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <span class="section-icon">
+                            📊
+                        </span>
+
+                        <h2>
+                            Code Quality
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div class="quality-score-card">
+
+                    <div class="quality-score">
+
+                        <span
+                            id="quality-score"
+                            class="large-score"
+                        >
+                            --
+                        </span>
+
+                        <span class="score-label">
+                            Quality Score
+                        </span>
+
+                    </div>
+
+                    <p>
+                        Custom DevGuard quality heuristic
+                    </p>
+
+                </div>
+
+
+                <div class="metrics-grid">
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Total Lines
+                        </span>
+
+                        <strong
+                            id="quality-total-lines"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Functions
+                        </span>
+
+                        <strong
+                            id="quality-functions"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Classes
+                        </span>
+
+                        <strong
+                            id="quality-classes"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Long Lines
+                        </span>
+
+                        <strong
+                            id="quality-long-lines"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Long Functions
+                        </span>
+
+                        <strong
+                            id="quality-long-functions"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Syntax Errors
+                        </span>
+
+                        <strong
+                            id="quality-syntax-errors"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Detailed Metrics -->
+
+                <div class="subsection">
+
+                    <h3>
+                        Detailed Metrics
+                    </h3>
+
+                    <div class="metrics-grid">
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Comment Lines
+                            </span>
+
+                            <strong
+                                id="comment-lines"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Comment Ratio
+                            </span>
+
+                            <strong
+                                id="comment-ratio"
+                                class="metric-value"
+                            >
+                                0%
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Blank Lines
+                            </span>
+
+                            <strong
+                                id="blank-lines"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Blank Line Ratio
+                            </span>
+
+                            <strong
+                                id="blank-line-ratio"
+                                class="metric-value"
+                            >
+                                0%
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Documented Functions
+                            </span>
+
+                            <strong
+                                id="documented-functions"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Undocumented Functions
+                            </span>
+
+                            <strong
+                                id="undocumented-functions"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Documentation Ratio
+                            </span>
+
+                            <strong
+                                id="documentation-ratio"
+                                class="metric-value"
+                            >
+                                0%
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Average Function Length
+                            </span>
+
+                            <strong
+                                id="average-function-length"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                Average Complexity
+                            </span>
+
+                            <strong
+                                id="average-complexity"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+
+                        <div class="metric-card">
+
+                            <span class="metric-label">
+                                High Complexity Functions
+                            </span>
+
+                            <strong
+                                id="high-complexity-count"
+                                class="metric-value"
+                            >
+                                0
+                            </strong>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- High Complexity Functions -->
+
+                <div class="subsection">
+
+                    <h3>
+                        ⚠️ High Complexity Functions
+                    </h3>
+
+                    <div
+                        id="high-complexity-functions"
+                        class="details-list"
+                    ></div>
+
+                </div>
+
+
+                <!-- Long Functions -->
+
+                <div class="subsection">
+
+                    <h3>
+                        📏 Long Functions
+                    </h3>
+
+                    <div
+                        id="long-functions"
+                        class="details-list"
+                    ></div>
+
+                </div>
+
+
+                <!-- Syntax Errors -->
+
+                <div class="subsection">
+
+                    <h3>
+                        ❌ Syntax Errors
+                    </h3>
+
+                    <div
+                        id="syntax-errors"
+                        class="details-list"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 SECURITY ANALYSIS
+            ================================================== -->
+
+            <section
+                id="security-analysis"
+                class="dashboard-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <span class="section-icon">
+                            🔐
+                        </span>
+
+                        <h2>
+                            Security Analysis
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div class="security-status-card">
+
+                    <div class="security-status-icon">
+                        🔐
+                    </div>
+
+                    <div>
+
+                        <h3 id="security-status">
+                            --
+                        </h3>
+
+                        <p>
+                            Basic static security analysis
+                        </p>
+
+                    </div>
+
+                </div>
+
+
+                <div class="metrics-grid">
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            High
+                        </span>
+
+                        <strong
+                            id="security-high"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Medium
+                        </span>
+
+                        <strong
+                            id="security-medium"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Low
+                        </span>
+
+                        <strong
+                            id="security-low"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-label">
+                            Total Findings
+                        </span>
+
+                        <strong
+                            id="security-total"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+                </div>
+
+
+                <div class="subsection">
+
+                    <h3>
+                        Security Findings
+                    </h3>
+
+                    <div
+                        id="security-findings"
+                        class="details-list"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 PROJECT HEALTH
+            ================================================== -->
+
+            <section
+                id="project-health"
+                class="dashboard-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <span class="section-icon">
+                            ❤️
+                        </span>
+
+                        <h2>
+                            Project Health
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div class="health-score-card">
+
+                    <div>
+
+                        <span
+                            id="health-score"
+                            class="large-score"
+                        >
+                            --
+                        </span>
+
+                        <span>
+                            / 100
+                        </span>
+
+                    </div>
+
+                    <h3 id="health-status">
+                        --
+                    </h3>
+
+                    <p>
+                        Project health score
+                    </p>
+
+                </div>
+
+
+                <div class="health-indicators">
+
+                    <div
+                        id="health-readme"
+                        class="health-indicator"
+                    ></div>
+
+                    <div
+                        id="health-gitignore"
+                        class="health-indicator"
+                    ></div>
+
+                    <div
+                        id="health-license"
+                        class="health-indicator"
+                    ></div>
+
+                    <div
+                        id="health-dependencies"
+                        class="health-indicator"
+                    ></div>
+
+                    <div
+                        id="health-tests"
+                        class="health-indicator"
+                    ></div>
+
+                </div>
+
+
+                <div class="metrics-grid">
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            📦
+                        </span>
+
+                        <span class="metric-label">
+                            Dependency Files
+                        </span>
+
+                        <strong
+                            id="dependency-file-count"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            🧪
+                        </span>
+
+                        <span class="metric-label">
+                            Test Files
+                        </span>
+
+                        <strong
+                            id="health-test-count"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            📝
+                        </span>
+
+                        <span class="metric-label">
+                            TODO / FIXME
+                        </span>
+
+                        <strong
+                            id="todo-count"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+
+                    <div class="metric-card">
+
+                        <span class="metric-icon">
+                            📄
+                        </span>
+
+                        <span class="metric-label">
+                            Important Files
+                        </span>
+
+                        <strong
+                            id="health-important-files"
+                            class="metric-value"
+                        >
+                            0
+                        </strong>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Ecosystems -->
+
+                <div class="subsection">
+
+                    <h3>
+                        Detected Ecosystems
+                    </h3>
+
+                    <div
+                        id="ecosystems"
+                        class="tag-list"
+                    ></div>
+
+                </div>
+
+
+                <!-- Dependency Files -->
+
+                <div class="subsection">
+
+                    <h3>
+                        Dependency Files
+                    </h3>
+
+                    <div
+                        id="dependency-files"
+                        class="details-list"
+                    ></div>
+
+                </div>
+
+
+                <!-- TODO Details -->
+
+                <div class="subsection">
+
+                    <h3>
+                        TODO / FIXME Markers
+                    </h3>
+
+                    <div
+                        id="todo-details"
+                        class="details-list"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 SCAN HISTORY
+            ================================================== -->
+
+            <section
+                id="scan-history"
+                class="dashboard-section"
+            >
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <span class="section-icon">
+                            🕘
+                        </span>
+
+                        <h2>
+                            Scan History
+                            <span
+                                id="history-count-badge"
+                                class="history-count-badge"
+                                aria-label="Number of saved scans"
+                            >
+                                0
+                            </span>
+                        </h2>
+
+                        <p>
+                            Previous DevGuard repository scans
+                        </p>
+
+                    </div>
+
+                    <button
+                        type="button"
+                        id="refresh-history-button"
+                        class="history-refresh-button"
+                    >
+                        🔄 Refresh History
+                    </button>
+
+                </div>
+
+
+                <div
+                    id="history-message"
+                    class="empty-state"
+                >
+                    Loading scan history...
+                </div>
+
+
+                <div
+                    id="history-list"
+                    class="history-list"
+                ></div>
+
+            </section>
+
+        </section>
+
+    </main>
+
+
+    <!-- =========================================================
+         JAVASCRIPT
+    ========================================================== -->
+
+    <script>
+
+        // ======================================================
+        // GLOBAL HELPERS
+        // ======================================================
+
+        const form = document.getElementById(
+            "repository-form"
+        );
+
+        const repositoryUrlInput = document.getElementById(
+            "repository-url"
+        );
+
+        const analyzeButton = document.getElementById(
+            "analyze-button"
+        );
+
+        const loading = document.getElementById(
+            "loading"
+        );
+
+        const results = document.getElementById(
+            "results"
+        );
+
+        const errorMessage = document.getElementById(
+            "error-message"
+        );
+
+
+        function escapeHtml(value) {
+
+            if (value === null || value === undefined) {
+                return "";
+            }
+
+            return String(value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+
+        let currentAnalysisData = null;
+
+        function scrollToSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+            section.scrollIntoView({ behavior: "smooth", block: "start" });
+            section.classList.remove("highlighted");
+            void section.offsetWidth;
+            section.classList.add("highlighted");
+            window.setTimeout(() => section.classList.remove("highlighted"), 1500);
+        }
+
+
+        function flashElement(element) {
+            if (!element) return;
+            element.classList.remove("highlighted");
+            void element.offsetWidth;
+            element.classList.add("highlighted");
+            window.setTimeout(() => element.classList.remove("highlighted"), 1500);
+        }
+
+
+        function buildReportText(data) {
+            const report = data?.overall_report || {};
+            const repository = data?.repository || {};
+            const scan = data?.scan || {};
+            const quality = data?.quality || {};
+            const security = data?.security || {};
+            const health = data?.project_health || {};
+
+            const lines = [
+                "DEVGUARD REPOSITORY ANALYSIS REPORT",
+                "====================================",
+                `Repository: ${repository.full_name || "Unknown"}`,
+                `URL: ${repository.html_url || repository.url || "Unknown"}`,
+                `Description: ${repository.description || "None"}`,
+                "",
+                `DevGuard Score: ${Number(report.overall_score || 0).toFixed(1)}/100`,
+                `Status: ${report.status || "Unknown"}`,
+                `Code Quality: ${Number(report.component_scores?.code_quality || 0).toFixed(1)}`,
+                `Security: ${Number(report.component_scores?.security || 0).toFixed(1)}`,
+                `Project Health: ${Number(report.component_scores?.project_health || 0).toFixed(1)}`,
+                "",
+                "REPOSITORY STRUCTURE",
+                `Files: ${scan.total_files || 0}`,
+                `Directories: ${scan.total_directories || 0}`,
+                `Test Files: ${scan.test_file_count || 0}`,
+                `Important Files: ${scan.important_file_count || 0}`,
+                "",
+                "CODE QUALITY",
+                `Total Lines: ${quality.total_lines || 0}`,
+                `Functions: ${quality.total_functions || 0}`,
+                `Classes: ${quality.total_classes || 0}`,
+                `Long Functions: ${quality.long_function_count || 0}`,
+                `Syntax Errors: ${quality.syntax_error_count || 0}`,
+                `Average Complexity: ${quality.average_complexity ?? 0}`,
+                "",
+                "SECURITY",
+                `Status: ${security.security_status || "No Issues Detected"}`,
+                `High: ${security.high_severity || 0}`,
+                `Medium: ${security.medium_severity || 0}`,
+                `Low: ${security.low_severity || 0}`,
+                `Total Findings: ${security.total_findings || 0}`,
+                "",
+                "PROJECT HEALTH",
+                `Score: ${health.health_score || 0}/100`,
+                `Status: ${health.health_status || "Unknown"}`,
+                `README: ${health.has_readme ? "Present" : "Missing"}`,
+                `Gitignore: ${health.has_gitignore ? "Present" : "Missing"}`,
+                `License: ${health.has_license ? "Present" : "Missing"}`,
+                `Dependencies: ${(health.dependency_files || []).length}`,
+                `Tests: ${(health.test_files || []).length}`,
+                "",
+                "RECOMMENDATIONS",
+                ...(report.recommendations || []).map((item, index) =>
+                    `${index + 1}. [${item.priority || "Low"}] ${item.category || "General"}: ${item.message || ""}`
+                )
+            ];
+
+            return lines.join("\n");
+        }
+
+
+        async function copyReport() {
+            if (!currentAnalysisData) {
+                showError("Run a repository analysis before copying the report.");
+                return;
+            }
+
+            const text = buildReportText(currentAnalysisData);
+
+            try {
+                await navigator.clipboard.writeText(text);
+                const button = document.getElementById("copy-report-button");
+                if (button) {
+                    const original = button.textContent;
+                    button.textContent = "✅ Report Copied";
+                    window.setTimeout(() => { button.textContent = original; }, 1600);
+                }
+            } catch (error) {
+                showError("Unable to copy the report. Your browser may block clipboard access.");
+            }
+        }
+
+
+        function downloadReport() {
+            if (!currentAnalysisData) {
+                showError("Run a repository analysis before downloading the report.");
+                return;
+            }
+
+            const repository = currentAnalysisData.repository || {};
+            const safeName = String(repository.full_name || "devguard-report")
+                .replace(/[^a-z0-9_-]+/gi, "-")
+                .replace(/^-+|-+$/g, "") || "devguard-report";
+
+            const blob = new Blob([buildReportText(currentAnalysisData)], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${safeName}-devguard-report.txt`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
+
+
+        function showLoading(show) {
+
+            if (show) {
+
+                loading.classList.remove("hidden");
+
+                analyzeButton.disabled = true;
+
+                analyzeButton.textContent =
+                    "Analyzing...";
+
+            } else {
+
+                loading.classList.add("hidden");
+
+                analyzeButton.disabled = false;
+
+                analyzeButton.textContent =
+                    "🔍 Analyze Repository";
+            }
+        }
+
+
+        function showError(message) {
+
+            errorMessage.textContent = message;
+
+            errorMessage.classList.remove(
+                "hidden"
+            );
+        }
+
+
+        function hideError() {
+
+            errorMessage.textContent = "";
+
+            errorMessage.classList.add(
+                "hidden"
+            );
+        }
+
+
+        function formatNumber(value) {
+
+            if (
+                value === null ||
+                value === undefined
+            ) {
+                return "0";
+            }
+
+            return Number(value).toLocaleString();
+        }
+
+
+        function formatPercentage(value) {
+
+            if (
+                value === null ||
+                value === undefined
+            ) {
+                return "0%";
+            }
+
+            return `${Number(value).toFixed(2)}%`;
+        }
+
+
+        // ======================================================
+        // ANALYZE REPOSITORY
+        // ======================================================
+
+        form.addEventListener(
+            "submit",
+            analyzeRepository
+        );
+
+
+        async function analyzeRepository(event) {
+
+            event.preventDefault();
+
+            hideError();
+
+            const repositoryUrl =
+                repositoryUrlInput.value.trim();
+
+            if (!repositoryUrl) {
+
+                showError(
+                    "Please enter a GitHub repository URL."
+                );
+
+                return;
+            }
+
+            showLoading(true);
+
+            results.classList.add(
+                "hidden"
+            );
+
+            try {
+
+                const response = await fetch(
+                    "/api/analyze",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            repository_url:
+                                repositoryUrl
+                        })
+                    }
+                );
+
+
+                const data =
+                    await response.json();
+
+
+                if (
+                    !response.ok ||
+                    !data.success
+                ) {
+
+                    throw new Error(
+                        data.error ||
+                        "Repository analysis failed."
+                    );
+                }
+
+
+                currentAnalysisData = data;
+
+                displayRepository(
+                    data.repository
+                );
+
+
+                displayScan(
+                    data.scan
+                );
+
+                displayAnalytics(
+                    data.scan,
+                    data.quality,
+                    data.security
+                );
+
+
+                displayQuality(
+                    data.quality
+                );
+
+
+                displaySecurity(
+                    data.security
+                );
+
+
+                displayProjectHealth(
+                    data.project_health
+                );
+
+
+                displayOverallReport(
+                    data.overall_report
+                );
+
+                await loadScanHistory();
+
+
+                results.classList.remove(
+                    "hidden"
+                );
+
+
+                results.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                });
+
+            } catch (error) {
+
+                console.error(
+                    "Analysis error:",
+                    error
+                );
+
+                showError(
+                    error.message ||
+                    "Unable to analyze repository."
+                );
+
+            } finally {
+
+                showLoading(false);
+            }
+        }
+
+
+        // ======================================================
+        // REPOSITORY INFORMATION
+        // ======================================================
+
+        function displayRepository(repository) {
+
+            document.getElementById(
+                "repository-name"
+            ).textContent =
+                repository.full_name || "--";
+
+
+            document.getElementById(
+                "repository-description"
+            ).textContent =
+                repository.description ||
+                "No description available.";
+
+
+            const githubLink =
+                document.getElementById(
+                    "github-link"
+                );
+
+            githubLink.href =
+                repository.html_url || "#";
+
+
+            document.getElementById(
+                "repository-stars"
+            ).textContent =
+                formatNumber(
+                    repository.stars
+                );
+
+
+            document.getElementById(
+                "repository-forks"
+            ).textContent =
+                formatNumber(
+                    repository.forks
+                );
+
+
+            document.getElementById(
+                "repository-issues"
+            ).textContent =
+                formatNumber(
+                    repository.open_issues
+                );
+
+
+            document.getElementById(
+                "repository-language"
+            ).textContent =
+                repository.language ||
+                "Unknown";
+        }
+
+
+        // ======================================================
+        // REPOSITORY SCAN
+        // ======================================================
+
+        function displayScan(scan) {
+
+            document.getElementById(
+                "total-files"
+            ).textContent =
+                formatNumber(
+                    scan.total_files
+                );
+
+
+            document.getElementById(
+                "total-directories"
+            ).textContent =
+                formatNumber(
+                    scan.total_directories
+                );
+
+
+            document.getElementById(
+                "test-file-count"
+            ).textContent =
+                formatNumber(
+                    scan.test_file_count
+                );
+
+
+            document.getElementById(
+                "important-file-count"
+            ).textContent =
+                formatNumber(
+                    scan.important_file_count
+                );
+
+
+            const languages =
+                document.getElementById(
+                    "languages-list"
+                );
+
+
+            languages.innerHTML = "";
+
+
+            const languageCounts =
+                scan.language_counts || {};
+
+
+            const languageEntries =
+                Object.entries(
+                    languageCounts
+                );
+
+
+            if (
+                languageEntries.length === 0
+            ) {
+
+                languages.innerHTML =
+                    '<span class="empty-state">No language information available.</span>';
+
+                return;
+            }
+
+
+            languageEntries.forEach(
+                ([language, count]) => {
+
+                    const tag =
+                        document.createElement(
+                            "span"
+                        );
+
+                    tag.className =
+                        "tag";
+
+                    tag.innerHTML =
+                        `${escapeHtml(language)} <strong>${escapeHtml(count)}</strong>`;
+
+                    languages.appendChild(
+                        tag
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // CODE QUALITY
+        // ======================================================
+
+        function displayQuality(quality) {
+
+            document.getElementById(
+                "quality-score"
+            ).textContent =
+                quality.quality_score ??
+                0;
+
+
+            document.getElementById(
+                "quality-total-lines"
+            ).textContent =
+                formatNumber(
+                    quality.total_lines
+                );
+
+
+            document.getElementById(
+                "quality-functions"
+            ).textContent =
+                formatNumber(
+                    quality.total_functions
+                );
+
+
+            document.getElementById(
+                "quality-classes"
+            ).textContent =
+                formatNumber(
+                    quality.total_classes
+                );
+
+
+            document.getElementById(
+                "quality-long-lines"
+            ).textContent =
+                formatNumber(
+                    quality.long_line_count
+                );
+
+
+            document.getElementById(
+                "quality-long-functions"
+            ).textContent =
+                formatNumber(
+                    quality.long_function_count
+                );
+
+
+            document.getElementById(
+                "quality-syntax-errors"
+            ).textContent =
+                formatNumber(
+                    quality.syntax_error_count
+                );
+
+
+            document.getElementById(
+                "comment-lines"
+            ).textContent =
+                formatNumber(
+                    quality.total_comment_lines
+                );
+
+
+            document.getElementById(
+                "comment-ratio"
+            ).textContent =
+                formatPercentage(
+                    quality.comment_ratio
+                );
+
+
+            document.getElementById(
+                "blank-lines"
+            ).textContent =
+                formatNumber(
+                    quality.total_blank_lines
+                );
+
+
+            document.getElementById(
+                "blank-line-ratio"
+            ).textContent =
+                formatPercentage(
+                    quality.blank_line_ratio
+                );
+
+
+            document.getElementById(
+                "documented-functions"
+            ).textContent =
+                formatNumber(
+                    quality.documented_functions
+                );
+
+
+            document.getElementById(
+                "undocumented-functions"
+            ).textContent =
+                formatNumber(
+                    quality.undocumented_functions
+                );
+
+
+            document.getElementById(
+                "documentation-ratio"
+            ).textContent =
+                formatPercentage(
+                    quality.documentation_ratio
+                );
+
+
+            document.getElementById(
+                "average-function-length"
+            ).textContent =
+                Number(
+                    quality.average_function_length || 0
+                ).toFixed(2);
+
+
+            document.getElementById(
+                "average-complexity"
+            ).textContent =
+                Number(
+                    quality.average_complexity || 0
+                ).toFixed(2);
+
+
+            document.getElementById(
+                "high-complexity-count"
+            ).textContent =
+                formatNumber(
+                    quality.high_complexity_count
+                );
+
+
+            displayComplexFunctions(
+                quality.high_complexity_functions
+            );
+
+
+            displayLongFunctions(
+                quality.long_functions
+            );
+
+
+            displaySyntaxErrors(
+                quality.syntax_errors
+            );
+        }
+
+
+        // ======================================================
+        // HIGH COMPLEXITY FUNCTIONS
+        // ======================================================
+
+        function displayComplexFunctions(
+            functions
+        ) {
+
+            const container =
+                document.getElementById(
+                    "high-complexity-functions"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !functions ||
+                functions.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state">No high-complexity functions detected.</div>';
+
+                return;
+            }
+
+
+            functions.forEach(
+                (item) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+                    card.className =
+                        "detail-card complexity-card interactive-detail";
+                    card.tabIndex = 0;
+                    card.setAttribute("role", "button");
+                    card.setAttribute("aria-label", `Open details for ${item.name || "function"}`);
+
+
+                    card.innerHTML = `
+                        <div class="detail-header">
+                            <strong>
+                                ${escapeHtml(item.name)}
+                            </strong>
+
+                            <span class="detail-file">
+                                ${escapeHtml(
+                                    item.file_path ||
+                                    "Unknown file"
+                                )}
+                            </span>
+                        </div>
+
+                        <div class="detail-meta">
+                            Complexity:
+                            <strong>
+                                ${escapeHtml(item.complexity)}
+                            </strong>
+                        </div>
+
+                        <div class="detail-meta">
+                            Lines:
+                            ${escapeHtml(item.line_count)}
+                            (${escapeHtml(item.start_line)}
+                            -
+                            ${escapeHtml(item.end_line)})
+                        </div>
+                    `;
+
+
+                    card.insertAdjacentHTML(
+                        "beforeend",
+                        '<div class="detail-hint">Click to focus Code Quality and inspect this function.</div>'
+                    );
+
+                    const focusQuality = () => scrollToSection("code-quality");
+                    card.addEventListener("click", focusQuality);
+                    card.addEventListener("keydown", (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            focusQuality();
+                        }
+                    });
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // LONG FUNCTIONS
+        // ======================================================
+
+        function displayLongFunctions(
+            functions
+        ) {
+
+            const container =
+                document.getElementById(
+                    "long-functions"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !functions ||
+                functions.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state">No long functions detected.</div>';
+
+                return;
+            }
+
+
+            functions.forEach(
+                (item) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+                    card.className =
+                        "detail-card interactive-detail";
+                    card.tabIndex = 0;
+                    card.setAttribute("role", "button");
+
+
+                    card.innerHTML = `
+                        <div class="detail-header">
+                            <strong>
+                                ${escapeHtml(item.name)}
+                            </strong>
+
+                            <span class="detail-file">
+                                ${escapeHtml(
+                                    item.file_path ||
+                                    "Unknown file"
+                                )}
+                            </span>
+                        </div>
+
+                        <div class="detail-meta">
+                            ${escapeHtml(item.line_count)}
+                            lines
+                        </div>
+
+                        <div class="detail-meta">
+                            Lines:
+                            ${escapeHtml(item.start_line)}
+                            -
+                            ${escapeHtml(item.end_line)}
+                        </div>
+                    `;
+
+
+                    card.insertAdjacentHTML(
+                        "beforeend",
+                        '<div class="detail-hint">Click to focus Code Quality and inspect this function.</div>'
+                    );
+
+                    const focusQuality = () => scrollToSection("code-quality");
+                    card.addEventListener("click", focusQuality);
+                    card.addEventListener("keydown", (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            focusQuality();
+                        }
+                    });
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // SYNTAX ERRORS
+        // ======================================================
+
+        function displaySyntaxErrors(
+            errors
+        ) {
+
+            const container =
+                document.getElementById(
+                    "syntax-errors"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !errors ||
+                errors.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state success-state">✓ No syntax errors detected.</div>';
+
+                return;
+            }
+
+
+            errors.forEach(
+                (item) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+                    card.className =
+                        "detail-card error-card";
+
+
+                    card.innerHTML = `
+                        <div class="detail-header">
+                            <strong>
+                                ${escapeHtml(
+                                    item.file_path ||
+                                    item.file ||
+                                    "Unknown file"
+                                )}
+                            </strong>
+                        </div>
+
+                        <div class="detail-meta">
+                            Line:
+                            ${escapeHtml(
+                                item.line ||
+                                item.lineno ||
+                                "Unknown"
+                            )}
+                        </div>
+
+                        <div class="detail-message">
+                            ${escapeHtml(
+                                item.message ||
+                                "Syntax error detected."
+                            )}
+                        </div>
+                    `;
+
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // SECURITY
+        // ======================================================
+
+        function displaySecurity(
+            security
+        ) {
+
+            document.getElementById(
+                "security-status"
+            ).textContent =
+                security.security_status ||
+                "No Issues Detected";
+
+
+            document.getElementById(
+                "security-high"
+            ).textContent =
+                formatNumber(
+                    security.high_severity
+                );
+
+
+            document.getElementById(
+                "security-medium"
+            ).textContent =
+                formatNumber(
+                    security.medium_severity
+                );
+
+
+            document.getElementById(
+                "security-low"
+            ).textContent =
+                formatNumber(
+                    security.low_severity
+                );
+
+
+            document.getElementById(
+                "security-total"
+            ).textContent =
+                formatNumber(
+                    security.total_findings
+                );
+
+
+            const container =
+                document.getElementById(
+                    "security-findings"
+                );
+
+
+            container.innerHTML = "";
+
+
+            const findings =
+                security.findings || [];
+
+
+            if (
+                findings.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state success-state">✓ No security findings detected.</div>';
+
+                return;
+            }
+
+
+            findings.forEach(
+                (finding) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+                    card.className =
+                        "detail-card security-finding-card interactive-detail";
+                    card.tabIndex = 0;
+                    card.setAttribute("role", "button");
+                    card.setAttribute("aria-expanded", "false");
+
+
+                    card.innerHTML = `
+                        <div class="detail-header">
+                            <strong>
+                                ${escapeHtml(
+                                    finding.title ||
+                                    "Security Finding"
+                                )}
+                            </strong>
+
+                            <span class="severity-badge ${String(
+                                finding.severity || "unknown"
+                            ).toLowerCase()}">
+                                ${escapeHtml(
+                                    finding.severity ||
+                                    "unknown"
+                                )}
+                            </span>
+                        </div>
+
+                        <div class="detail-meta">
+                            📄
+                            ${escapeHtml(
+                                finding.file ||
+                                "Unknown file"
+                            )}
+
+                            📍 Line
+                            ${escapeHtml(
+                                finding.line ||
+                                "Unknown"
+                            )}
+                        </div>
+
+                        <div class="finding-details">
+                            <div class="detail-message">
+                                ${escapeHtml(
+                                    finding.message ||
+                                    ""
+                                )}
+                            </div>
+                            <div class="detail-hint">Click to collapse or expand this finding.</div>
+                        </div>
+                    `;
+
+
+                    const toggleFinding = () => {
+                        const expanded = card.classList.toggle("expanded");
+                        card.setAttribute("aria-expanded", String(expanded));
+                    };
+                    card.addEventListener("click", toggleFinding);
+                    card.addEventListener("keydown", (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            toggleFinding();
+                        }
+                    });
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // REPOSITORY ANALYTICS
+        // ======================================================
+
+        function createAnalyticsBars(containerId, entries, emptyMessage) {
+
+            const container = document.getElementById(containerId);
+            container.innerHTML = "";
+
+            if (!entries || entries.length === 0) {
+                container.innerHTML = `<div class="analytics-empty">${escapeHtml(emptyMessage)}</div>`;
+                return;
+            }
+
+            const max = Math.max(...entries.map(item => Number(item.value) || 0), 1);
+
+            entries.forEach(item => {
+                const row = document.createElement("div");
+                row.className = "analytics-row";
+
+                const percentage = Math.round(((Number(item.value) || 0) / max) * 100);
+
+                row.innerHTML = `
+                    <span class="analytics-label" title="${escapeHtml(item.label)}">
+                        ${escapeHtml(item.label)}
+                    </span>
+                    <div class="analytics-track">
+                        <div class="analytics-bar" style="width:${percentage}%"></div>
+                    </div>
+                    <span class="analytics-value">${escapeHtml(item.value)}</span>
+                `;
+
+                container.appendChild(row);
+            });
+        }
+
+
+        function displayAnalytics(scan, quality, security) {
+
+            const languageCounts = scan?.language_counts || {};
+            const languageEntries = Object.entries(languageCounts)
+                .map(([label, value]) => ({ label, value: Number(value) || 0 }))
+                .sort((a, b) => b.value - a.value);
+
+            createAnalyticsBars(
+                "language-analytics",
+                languageEntries,
+                "No language data available."
+            );
+
+            const totalFiles = Number(scan?.total_files || 0);
+            const testFiles = Number(scan?.test_file_count || 0);
+            const importantFiles = Number(scan?.important_file_count || 0);
+            const directories = Number(scan?.total_directories || 0);
+            const sourceFiles = Math.max(totalFiles - testFiles, 0);
+
+            const composition = document.getElementById("composition-analytics");
+            composition.innerHTML = `
+                <div class="analytics-stat-grid">
+                    <div class="analytics-stat"><span>Total Files</span><strong>${formatNumber(totalFiles)}</strong></div>
+                    <div class="analytics-stat"><span>Directories</span><strong>${formatNumber(directories)}</strong></div>
+                    <div class="analytics-stat"><span>Source / Other Files</span><strong>${formatNumber(sourceFiles)}</strong></div>
+                    <div class="analytics-stat"><span>Test Files</span><strong>${formatNumber(testFiles)}</strong></div>
+                    <div class="analytics-stat"><span>Important Files</span><strong>${formatNumber(importantFiles)}</strong></div>
+                    <div class="analytics-stat"><span>Language Types</span><strong>${formatNumber(languageEntries.length)}</strong></div>
+                </div>
+            `;
+
+            const qualityEntries = [
+                { label: "Functions", value: Number(quality?.total_functions || 0) },
+                { label: "Classes", value: Number(quality?.total_classes || 0) },
+                { label: "Long Functions", value: Number(quality?.long_function_count || 0) },
+                { label: "High Complexity", value: Number(quality?.high_complexity_count || 0) },
+                { label: "Syntax Errors", value: Number(quality?.syntax_error_count || 0) }
+            ];
+
+            createAnalyticsBars(
+                "quality-analytics",
+                qualityEntries,
+                "No quality metrics available."
+            );
+
+            const securityEntries = [
+                { label: "High", value: Number(security?.high_severity || 0) },
+                { label: "Medium", value: Number(security?.medium_severity || 0) },
+                { label: "Low", value: Number(security?.low_severity || 0) }
+            ];
+
+            createAnalyticsBars(
+                "security-analytics",
+                securityEntries,
+                "No security findings detected."
+            );
+        }
+
+
+        // ======================================================
+        // PROJECT HEALTH
+        // ======================================================
+
+        function displayProjectHealth(
+            health
+        ) {
+
+            document.getElementById(
+                "health-score"
+            ).textContent =
+                health.health_score ??
+                0;
+
+
+            document.getElementById(
+                "health-status"
+            ).textContent =
+                health.health_status ||
+                "--";
+
+
+            document.getElementById(
+                "dependency-file-count"
+            ).textContent =
+                formatNumber(
+                    health.dependency_file_count
+                );
+
+
+            document.getElementById(
+                "health-test-count"
+            ).textContent =
+                formatNumber(
+                    health.test_file_count
+                );
+
+
+            document.getElementById(
+                "todo-count"
+            ).textContent =
+                formatNumber(
+                    health.todo_count
+                );
+
+
+            document.getElementById(
+                "health-important-files"
+            ).textContent =
+                formatNumber(
+                    health.important_file_count
+                );
+
+
+            displayHealthIndicator(
+                "health-readme",
+                "📖",
+                "README",
+                health.has_readme
+            );
+
+
+            displayHealthIndicator(
+                "health-gitignore",
+                "🧹",
+                ".gitignore",
+                health.has_gitignore
+            );
+
+
+            displayHealthIndicator(
+                "health-license",
+                "📄",
+                "License",
+                health.has_license
+            );
+
+
+            displayHealthIndicator(
+                "health-dependencies",
+                "📦",
+                "Dependencies",
+                Number(
+                    health.dependency_file_count || 0
+                ) > 0
+            );
+
+
+            displayHealthIndicator(
+                "health-tests",
+                "🧪",
+                "Tests",
+                Number(
+                    health.test_file_count || 0
+                ) > 0
+            );
+
+
+            displayEcosystems(
+                health.ecosystems
+            );
+
+
+            displayDependencyFiles(
+                health.dependency_files
+            );
+
+
+            displayTodoDetails(
+                health.todo_details
+            );
+        }
+
+
+        function displayHealthIndicator(
+            elementId,
+            icon,
+            label,
+            present
+        ) {
+
+            const element =
+                document.getElementById(
+                    elementId
+                );
+
+
+            element.className =
+                present
+                    ? "health-indicator present"
+                    : "health-indicator missing";
+
+
+            element.innerHTML = `
+                <span>
+                    ${icon}
+                </span>
+
+                <strong>
+                    ${escapeHtml(label)}
+                </strong>
+
+                <span>
+                    ${present ? "✓ Present" : "✗ Missing"}
+                </span>
+            `;
+        }
+
+
+        // ======================================================
+        // ECOSYSTEMS
+        // ======================================================
+
+        function displayEcosystems(
+            ecosystems
+        ) {
+
+            const container =
+                document.getElementById(
+                    "ecosystems"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !ecosystems ||
+                ecosystems.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<span class="empty-state">No ecosystems detected.</span>';
+
+                return;
+            }
+
+
+            ecosystems.forEach(
+                (ecosystem) => {
+
+                    const tag =
+                        document.createElement(
+                            "span"
+                        );
+
+                    tag.className =
+                        "tag";
+
+                    tag.textContent =
+                        ecosystem;
+
+                    container.appendChild(
+                        tag
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // DEPENDENCY FILES
+        // ======================================================
+
+        function displayDependencyFiles(
+            files
+        ) {
+
+            const container =
+                document.getElementById(
+                    "dependency-files"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !files ||
+                files.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state">No dependency files detected.</div>';
+
+                return;
+            }
+
+
+            files.forEach(
+                (item) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+                    card.className =
+                        "detail-card";
+
+
+                    card.innerHTML = `
+                        <div class="detail-header">
+                            <strong>
+                                📦
+                                ${escapeHtml(
+                                    item.file
+                                )}
+                            </strong>
+
+                            <span class="detail-file">
+                                ${escapeHtml(
+                                    item.ecosystem
+                                )}
+                            </span>
+                        </div>
+                    `;
+
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // TODO DETAILS
+        // ======================================================
+
+        function displayTodoDetails(
+            details
+        ) {
+
+            const container =
+                document.getElementById(
+                    "todo-details"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !details ||
+                details.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state success-state">✓ No TODO markers detected.</div>';
+
+                return;
+            }
+
+
+            details.forEach(
+                (item) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+                    card.className =
+                        "detail-card";
+
+
+                    card.innerHTML = `
+                        <div class="detail-header">
+                            <strong>
+                                ${escapeHtml(
+                                    item.marker
+                                )}
+                            </strong>
+
+                            <span class="detail-file">
+                                ${escapeHtml(
+                                    item.file
+                                )}
+                                — Line
+                                ${escapeHtml(
+                                    item.line
+                                )}
+                            </span>
+                        </div>
+
+                        <div class="detail-message">
+                            ${escapeHtml(
+                                item.text
+                            )}
+                        </div>
+                    `;
+
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // OVERALL DEVGUARD REPORT
+        // ======================================================
+
+        function getScoreClass(score) {
+
+            const value = Number(score || 0);
+
+            if (value >= 80) {
+                return "score-good";
+            }
+
+            if (value >= 60) {
+                return "score-improvement";
+            }
+
+            return "score-attention";
+        }
+
+
+        function setScoreRing(elementId, score) {
+
+            const ring = document.getElementById(elementId);
+
+            if (!ring) {
+                return;
+            }
+
+            const value = Math.max(0, Math.min(100, Number(score || 0)));
+
+            ring.style.setProperty("--score", value);
+
+            ring.classList.remove(
+                "score-good",
+                "score-improvement",
+                "score-attention"
+            );
+
+            ring.classList.add(
+                getScoreClass(value)
+            );
+        }
+
+
+        // ======================================================
+        // OVERALL REPORT
+        // ======================================================
+
+        function displayOverallReport(
+            report
+        ) {
+
+            if (!report) {
+
+                document.getElementById(
+                    "overall-score"
+                ).textContent = "--";
+
+                document.getElementById(
+                    "overall-status"
+                ).textContent =
+                    "No report available.";
+
+                return;
+            }
+
+
+            // --------------------------------------------------
+            // Overall Score
+            // --------------------------------------------------
+
+            document.getElementById(
+                "overall-score"
+            ).textContent =
+                Number(
+                    report.overall_score || 0
+                ).toFixed(1);
+
+
+            document.getElementById(
+                "overall-status"
+            ).textContent =
+                report.status ||
+                "--";
+
+
+            // --------------------------------------------------
+            // Component Scores
+            // --------------------------------------------------
+
+            const componentScores =
+                report.component_scores || {};
+
+
+            document.getElementById(
+                "overall-quality-score"
+            ).textContent =
+                Number(
+                    componentScores.code_quality || 0
+                ).toFixed(1);
+
+
+            document.getElementById(
+                "overall-security-score"
+            ).textContent =
+                Number(
+                    componentScores.security || 0
+                ).toFixed(1);
+
+
+            document.getElementById(
+                "overall-health-score"
+            ).textContent =
+                Number(
+                    componentScores.project_health || 0
+                ).toFixed(1);
+
+
+            setScoreRing(
+                "overall-score-ring",
+                report.overall_score
+            );
+
+            setScoreRing(
+                "overall-quality-score-ring",
+                componentScores.code_quality
+            );
+
+            setScoreRing(
+                "overall-security-score-ring",
+                componentScores.security
+            );
+
+            setScoreRing(
+                "overall-health-score-ring",
+                componentScores.project_health
+            );
+
+
+            // --------------------------------------------------
+            // Recommendation Count
+            // --------------------------------------------------
+
+            document.getElementById(
+                "recommendation-count"
+            ).textContent =
+                formatNumber(
+                    report.recommendation_count
+                );
+
+
+            // --------------------------------------------------
+            // Recommendations
+            // --------------------------------------------------
+
+            displayRecommendations(
+                report.recommendations
+            );
+        }
+
+
+        // ======================================================
+        // RECOMMENDATIONS
+        // ======================================================
+
+        function displayRecommendations(
+            recommendations
+        ) {
+
+            const container =
+                document.getElementById(
+                    "recommendations-list"
+                );
+
+
+            container.innerHTML = "";
+
+
+            if (
+                !recommendations ||
+                recommendations.length === 0
+            ) {
+
+                container.innerHTML =
+                    '<div class="empty-state success-state">✓ No recommendations. Repository analysis looks good.</div>';
+
+                return;
+            }
+
+
+            recommendations.forEach(
+                (recommendation) => {
+
+                    const card =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    const priority =
+                        String(
+                            recommendation.priority ||
+                            "Low"
+                        ).toLowerCase();
+
+
+                    card.className =
+                        `recommendation-card priority-${priority} interactive-recommendation`;
+                    card.tabIndex = 0;
+                    card.setAttribute("role", "button");
+
+
+                    let icon = "ℹ️";
+
+
+                    if (
+                        priority === "high"
+                    ) {
+
+                        icon = "🔴";
+
+                    } else if (
+                        priority === "medium"
+                    ) {
+
+                        icon = "🟠";
+
+                    } else if (
+                        priority === "low"
+                    ) {
+
+                        icon = "🔵";
+                    }
+
+
+                    card.innerHTML = `
+                        <div class="recommendation-header">
+
+                            <div class="recommendation-title">
+
+                                <span>
+                                    ${icon}
+                                </span>
+
+                                <strong>
+                                    ${escapeHtml(
+                                        recommendation.category ||
+                                        "Recommendation"
+                                    )}
+                                </strong>
+
+                            </div>
+
+                            <span class="priority-badge">
+                                ${escapeHtml(
+                                    recommendation.priority ||
+                                    "Low"
+                                )}
+                            </span>
+
+                        </div>
+
+                        <div class="recommendation-message">
+                            ${escapeHtml(
+                                recommendation.message ||
+                                ""
+                            )}
+                        </div>
+                    `;
+
+
+                    const category = String(recommendation.category || "").toLowerCase();
+                    const targetId = category.includes("security")
+                        ? "security-analysis"
+                        : category.includes("project") || category.includes("documentation")
+                            ? "project-health"
+                            : "code-quality";
+
+                    const focusRecommendation = () => scrollToSection(targetId);
+                    card.addEventListener("click", focusRecommendation);
+                    card.addEventListener("keydown", (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            focusRecommendation();
+                        }
+                    });
+
+                    container.appendChild(
+                        card
+                    );
+                }
+            );
+        }
+
+
+        // ======================================================
+        // SCAN HISTORY
+        // ======================================================
+
+        const refreshHistoryButton = document.getElementById(
+            "refresh-history-button"
+        );
+
+        const historyMessage = document.getElementById(
+            "history-message"
+        );
+
+        const historyList = document.getElementById(
+            "history-list"
+        );
+
+        const historyCountBadge = document.getElementById(
+            "history-count-badge"
+        );
+
+
+        function getHistoryStatusClass(status) {
+
+            const normalizedStatus =
+                String(status || "")
+                    .toLowerCase()
+                    .replace(/\s+/g, "-");
+
+            if (normalizedStatus === "good") {
+                return "good";
+            }
+
+            if (normalizedStatus === "needs-improvement") {
+                return "needs-improvement";
+            }
+
+            if (normalizedStatus === "needs-attention") {
+                return "needs-attention";
+            }
+
+            return "default";
+        }
+
+
+        function formatHistoryDate(value) {
+
+            if (!value) {
+                return "--";
+            }
+
+            const parsedDate = new Date(
+                String(value).replace(" ", "T") + "Z"
+            );
+
+            if (Number.isNaN(parsedDate.getTime())) {
+                return value;
+            }
+
+            return parsedDate.toLocaleString();
+        }
+
+
+        async function loadScanHistory() {
+
+            if (!historyList || !historyMessage) {
+                return;
+            }
+
+            if (refreshHistoryButton) {
+                refreshHistoryButton.disabled = true;
+                refreshHistoryButton.textContent =
+                    "⏳ Loading...";
+            }
+
+            historyMessage.textContent =
+                "Loading scan history...";
+
+            historyList.innerHTML = "";
+
+            try {
+
+                const response = await fetch(
+                    "/api/history",
+                    {
+                        method: "GET"
+                    }
+                );
+
+                const data = await response.json();
+
+                if (
+                    !response.ok ||
+                    !data.success
+                ) {
+                    throw new Error(
+                        data.error ||
+                        "Unable to load scan history."
+                    );
+                }
+
+                displayScanHistory(
+                    data.history || []
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "History loading error:",
+                    error
+                );
+
+                historyMessage.className =
+                    "empty-state";
+
+                historyMessage.textContent =
+                    error.message ||
+                    "Unable to load scan history.";
+
+            } finally {
+
+                if (refreshHistoryButton) {
+                    refreshHistoryButton.disabled = false;
+                    refreshHistoryButton.textContent =
+                        "🔄 Refresh History";
+                }
+            }
+        }
+
+
+        function displayScanHistory(history) {
+
+            historyList.innerHTML = "";
+
+            const historyCount =
+                Array.isArray(history) ? history.length : 0;
+
+            if (historyCountBadge) {
+                historyCountBadge.textContent =
+                    historyCount;
+            }
+
+            if (
+                !history ||
+                history.length === 0
+            ) {
+
+                historyMessage.className =
+                    "empty-state";
+
+                historyMessage.textContent =
+                    "No previous scans found.";
+
+                return;
+            }
+
+            historyMessage.className =
+                "empty-state";
+
+            historyMessage.textContent =
+                `${history.length} scan${history.length === 1 ? "" : "s"} found.`;
+
+            history.forEach(
+                (scan) => {
+
+                    const card =
+                        document.createElement("div");
+
+                    card.className =
+                        "history-card";
+
+                    const statusClass =
+                        getHistoryStatusClass(
+                            scan.overall_status
+                        );
+
+                    card.innerHTML = `
+                        <div class="history-card-header">
+
+                            <div>
+                                <h3 class="history-repository-name">
+                                    📦 ${escapeHtml(
+                                        scan.repository_name ||
+                                        "Unknown repository"
+                                    )}
+                                </h3>
+
+                                <p class="history-repository-url">
+                                    ${
+                                        scan.repository_url
+                                            ? `<a
+                                                href="${escapeHtml(scan.repository_url)}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >${escapeHtml(scan.repository_url)}</a>`
+                                            : ""
+                                    }
+                                </p>
+                            </div>
+
+                            <span class="history-status ${statusClass}">
+                                ${escapeHtml(
+                                    scan.overall_status ||
+                                    "Unknown"
+                                )}
+                            </span>
+
+                        </div>
+
+
+                        <div class="history-score-grid">
+
+                            <div class="history-score-item">
+                                <span class="history-score-label">
+                                    DevGuard Score
+                                </span>
+
+                                <span class="history-score-value">
+                                    ${Number(
+                                        scan.overall_score || 0
+                                    ).toFixed(1)}
+                                </span>
+                            </div>
+
+
+                            <div class="history-score-item">
+                                <span class="history-score-label">
+                                    Code Quality
+                                </span>
+
+                                <span class="history-score-value">
+                                    ${Number(
+                                        scan.code_quality_score || 0
+                                    ).toFixed(1)}
+                                </span>
+                            </div>
+
+
+                            <div class="history-score-item">
+                                <span class="history-score-label">
+                                    Security
+                                </span>
+
+                                <span class="history-score-value">
+                                    ${Number(
+                                        scan.security_score || 0
+                                    ).toFixed(1)}
+                                </span>
+                            </div>
+
+
+                            <div class="history-score-item">
+                                <span class="history-score-label">
+                                    Project Health
+                                </span>
+
+                                <span class="history-score-value">
+                                    ${Number(
+                                        scan.project_health_score || 0
+                                    ).toFixed(1)}
+                                </span>
+                            </div>
+
+                        </div>
+
+
+                        <div class="history-card-footer">
+
+                            <span class="history-date">
+                                🕒 ${escapeHtml(
+                                    formatHistoryDate(
+                                        scan.scanned_at
+                                    )
+                                )}
+                                <span aria-hidden="true"> · </span>
+                                Scan #${escapeHtml(scan.id)}
+                            </span>
+
+                            <button
+                                type="button"
+                                class="history-delete-button"
+                                data-scan-id="${escapeHtml(
+                                    scan.id
+                                )}"
+                            >
+                                🗑️ Delete
+                            </button>
+
+                        </div>
+                    `;
+
+                    const deleteButton =
+                        card.querySelector(
+                            ".history-delete-button"
+                        );
+
+                    deleteButton.addEventListener(
+                        "click",
+                        () => deleteScan(
+                            scan.id
+                        )
+                    );
+
+                    historyList.appendChild(card);
+                }
+            );
+        }
+
+
+        async function deleteScan(scanId) {
+
+            const confirmed =
+                window.confirm(
+                    "Are you sure you want to delete this scan history record?"
+                );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+
+                const response = await fetch(
+                    `/api/history/${encodeURIComponent(scanId)}`,
+                    {
+                        method: "DELETE"
+                    }
+                );
+
+                const data =
+                    await response.json();
+
+                if (
+                    !response.ok ||
+                    !data.success
+                ) {
+                    throw new Error(
+                        data.error ||
+                        "Unable to delete scan history."
+                    );
+                }
+
+                await loadScanHistory();
+
+            } catch (error) {
+
+                console.error(
+                    "History delete error:",
+                    error
+                );
+
+                showError(
+                    error.message ||
+                    "Unable to delete scan history."
+                );
+            }
+        }
+
+
+        if (refreshHistoryButton) {
+
+            refreshHistoryButton.addEventListener(
+                "click",
+                loadScanHistory
+            );
+        }
+
+
+        const copyReportButton = document.getElementById("copy-report-button");
+        const downloadReportButton = document.getElementById("download-report-button");
+
+        if (copyReportButton) {
+            copyReportButton.addEventListener("click", copyReport);
+        }
+
+        if (downloadReportButton) {
+            downloadReportButton.addEventListener("click", downloadReport);
+        }
+
+
+        // Load saved scans when the dashboard opens.
+        loadScanHistory();
+
+
+    </script>
+
+</body>
+</html>
